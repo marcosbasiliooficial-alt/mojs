@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>1 Produto, 5 Estilos</title>
+<style>
+  html,body{margin:0;background:#000;}
+  canvas{display:block;width:1080px;height:1920px;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+/* =====================================================================
+   "1 produto. 5 vídeos completamente diferentes. Tudo com IA."
+   Motion piece 9:16 (1080x1920), 33s, renderizado quadro a quadro.
+   window.renderFrame(t) desenha o instante t (segundos) no canvas.
+   ===================================================================== */
+const W = 1080, H = 1920;
+const BEAT = 0.5;                       // 120 BPM: cada troca cai na batida
+const HOOK = 5, SEG = 7.5, CLOSE = 7;    // gancho, cada estilo, fechamento (s)
+const DURATION = HOOK + 5 * SEG + CLOSE; // 49.5 s
+const PRICE_OLD = 'R$ 1.299', PRICE_NEW = 'R$ 999';  // valores de exemplo: troque pelos do cliente
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+const FONTS = [
+  ['Inter', 'assets/fonts/InterDisplay-Black.otf', '900'],
+  ['Inter', 'assets/fonts/InterDisplay-ExtraBold.otf', '800'],
+  ['Inter', 'assets/fonts/InterDisplay-Bold.otf', '700'],
+  ['Inter', 'assets/fonts/InterDisplay-Medium.otf', '500'],
+  ['Inter', 'assets/fonts/InterDisplay-Light.otf', '300'],
+  ['Mono',  'assets/fonts/JetBrainsMono-Medium.ttf', '500'],
+  ['Mono',  'assets/fonts/JetBrainsMono-ExtraBold.ttf', '800'],
+  ['Serif', 'assets/fonts/DejaVuSerif-Bold.ttf', '700'],
+  ['LSerif','assets/fonts/LiberationSerif-BoldItalic.ttf', '700'],
+];
+
+/* ---------------- helpers ---------------- */
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const eOutCubic = k => 1 - Math.pow(1 - k, 3);
+const eInOutCubic = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const eOutBack = k => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+const eOutExpo = k => k === 1 ? 1 : 1 - Math.pow(2, -10 * k);
+const rnd = i => { const s = Math.sin(i * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+const ORANGE = '#ff5a1f';
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath(); c.roundRect(x, y, w, h, r);
+}
+function wrapLines(c, text, maxW) {
+  const words = text.split(' '); const lines = []; let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (c.measureText(test).width > maxW && line) { lines.push(line); line = w; } else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/* ---------------- o produto (mesma foto de referência em todos os estilos) ---------------- */
+/* Fotos reais do produto (fundo removido). lado_a = bico p/ esquerda, lado_b = bico p/ direita.
+   O "giro" alterna os lados quando o tênis fica de perfil, como num turntable. */
+const IMG = {}, V = {};
+const PAD = 40;
+function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+function variant(img, style) {
+  const k = document.createElement('canvas'); k.width = img.width + PAD * 2; k.height = img.height + PAD * 2;
+  const x = k.getContext('2d');
+  if (style === 'paper') { // borda branca de adesivo recortado
+    const sil = document.createElement('canvas'); sil.width = img.width; sil.height = img.height;
+    const s = sil.getContext('2d'); s.drawImage(img, 0, 0); s.globalCompositeOperation = 'source-in'; s.fillStyle = '#fffdf6'; s.fillRect(0, 0, img.width, img.height);
+    for (let a = 0; a < 32; a++) x.drawImage(sil, PAD + Math.cos(a / 32 * Math.PI * 2) * 20, PAD + Math.sin(a / 32 * Math.PI * 2) * 20);
+  }
+  x.drawImage(img, PAD, PAD);
+  x.globalCompositeOperation = 'source-atop';
+  if (style === 'paper') { x.globalAlpha = .13; x.fillStyle = HALFTONE_DARK; x.fillRect(0, 0, k.width, k.height); }
+  if (style === 'neon') {
+    x.fillStyle = 'rgba(25,0,70,.30)'; x.fillRect(0, 0, k.width, k.height);
+    const g = x.createLinearGradient(0, 0, k.width, 0);
+    g.addColorStop(0, 'rgba(255,43,214,.42)'); g.addColorStop(.5, 'rgba(255,43,214,0)'); g.addColorStop(1, 'rgba(0,229,255,.42)');
+    x.fillStyle = g; x.fillRect(0, 0, k.width, k.height);
+  }
+  if (style === 'cine') {
+    x.fillStyle = 'rgba(4,22,30,.42)'; x.fillRect(0, 0, k.width, k.height);
+    const g = x.createLinearGradient(0, 0, 0, k.height);
+    g.addColorStop(0, 'rgba(255,160,70,.30)'); g.addColorStop(.35, 'rgba(255,160,70,0)'); g.addColorStop(1, 'rgba(0,0,0,.35)');
+    x.fillStyle = g; x.fillRect(0, 0, k.width, k.height);
+  }
+  return k;
+}
+function buildProduct() {
+  for (const st of ['clean', 'paper', 'neon', 'cine']) {
+    V[st] = {}; for (const side of ['a', 'b', 'top']) V[st][side] = variant(IMG[side], st);
+  }
+  V.mono = V.clean;
+}
+/* style: clean | paper | neon | mono | cine */
+function drawSneaker(c, x, y, s, angle, style, o = {}) {
+  const ca = Math.cos(angle);
+  const side = o.side || (ca >= 0 ? 'b' : 'a');
+  const sx = o.side ? 1 : 0.12 + 0.88 * Math.abs(ca);
+  const base = IMG[side], img = V[style][side];
+  const w = (o.width || 640) * s, k = w / base.width, h = base.height * k;
+  c.save();
+  c.translate(x, y + 112 * s);
+  if (o.rot) c.rotate(o.rot);
+  c.scale(sx, 1);
+  if (style === 'neon') { c.shadowColor = 'rgba(0,229,255,.9)'; c.shadowBlur = 55; }
+  if (style === 'paper') { c.shadowColor = 'rgba(40,20,0,.35)'; c.shadowOffsetX = 10; c.shadowOffsetY = 14; }
+  c.drawImage(img, -w / 2 - PAD * k, -h - PAD * k, img.width * k, img.height * k);
+  c.restore();
+}
+
+/* ---------------- texturas pré-geradas ---------------- */
+let HALFTONE, HALFTONE_DARK, GRAIN = [], PAPER;
+function buildTextures() {
+  const mk = (w, h) => { const k = document.createElement('canvas'); k.width = w; k.height = h; return k; };
+  // meio-tom
+  let k = mk(24, 24), x = k.getContext('2d');
+  x.fillStyle = 'rgba(30,20,10,.18)'; x.beginPath(); x.arc(6, 6, 4, 0, 7); x.arc(18, 18, 4, 0, 7); x.fill();
+  HALFTONE = ctx.createPattern(k, 'repeat');
+  k = mk(14, 14); x = k.getContext('2d'); x.fillStyle = '#000'; x.beginPath(); x.arc(3.5, 3.5, 2.6, 0, 7); x.arc(10.5, 10.5, 2.6, 0, 7); x.fill();
+  HALFTONE_DARK = ctx.createPattern(k, 'repeat');
+  // grão de filme
+  for (let f = 0; f < 6; f++) {
+    k = mk(360, 640); x = k.getContext('2d'); const id = x.createImageData(360, 640);
+    for (let i = 0; i < id.data.length; i += 4) { const v = rnd(i * 0.37 + f * 991) * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+    x.putImageData(id, 0, 0); GRAIN.push(k);
+  }
+  // fibra de papel
+  k = mk(540, 960); x = k.getContext('2d'); x.fillStyle = '#eadcc0'; x.fillRect(0, 0, 540, 960);
+  for (let i = 0; i < 2600; i++) { x.fillStyle = `rgba(120,90,50,${rnd(i) * .09})`; x.fillRect(rnd(i + 1) * 540, rnd(i + 2) * 960, 1 + rnd(i + 3) * 3, 1 + rnd(i + 4) * 2); }
+  PAPER = k;
+}
+const TMP = document.createElement('canvas'); TMP.width = W; TMP.height = H;
+
+/* ---------------- sobreposições comuns ---------------- */
+function header(c, n, title, lt, dark) {
+  const k = eOutCubic(prog(lt, 0.05, 0.5));
+  c.save(); c.globalAlpha = k; c.translate(0, (1 - k) * 40);
+  c.font = '800 30px Mono'; c.textBaseline = 'middle';
+  const tag = `ESTILO 0${n}/05`;
+  const tw = c.measureText(tag).width + 44;
+  roundRect(c, 70, 150, tw, 58, 29); c.fillStyle = ORANGE; c.fill();
+  c.fillStyle = '#fff'; c.fillText(tag, 92, 180);
+  c.font = '900 88px Inter'; c.fillStyle = dark ? '#fff' : '#111'; c.textBaseline = 'alphabetic';
+  title.split('\n').forEach((l, i) => c.fillText(l, 68, 320 + i * 92));
+  c.restore();
+}
+function promptBox(c, text, lt, dark, y = 1600) {
+  const k = eOutCubic(prog(lt, 0.25, 0.7));
+  if (k <= 0) return;
+  c.save(); c.globalAlpha = k;
+  c.font = '500 31px Mono';
+  const shown = Math.floor(clamp((lt - 0.45) * 55, 0, text.length));
+  const lines = wrapLines(c, '"' + text + '"', 860);
+  const h = 96 + lines.length * 44;
+  roundRect(c, 60, y, 960, h, 26);
+  c.fillStyle = dark ? 'rgba(10,10,14,.72)' : 'rgba(255,255,255,.82)'; c.fill();
+  c.strokeStyle = dark ? 'rgba(255,255,255,.18)' : 'rgba(0,0,0,.08)'; c.lineWidth = 2; c.stroke();
+  c.font = '800 24px Mono'; c.fillStyle = ORANGE; c.fillText('PROMPT BASE  >_', 96, y + 52);
+  c.font = '500 31px Mono'; c.fillStyle = dark ? '#e8e8ee' : '#222';
+  let left = shown + 1; // +1 da aspa inicial
+  lines.forEach((l, i) => {
+    const part = l.slice(0, Math.max(0, left)); left -= l.length + 1;
+    c.fillText(part, 96, y + 100 + i * 44);
+    if (left <= 0 && left > -l.length - 1 && Math.floor(lt * 3) % 2 === 0 && shown < text.length) {
+      c.fillRect(96 + c.measureText(part).width + 4, y + 76 + i * 44, 16, 32);
+    }
+  });
+  c.restore();
+}
+function storyBar(c, t) {
+  if (t < HOOK || t >= HOOK + 5 * SEG) return;
+  const seg = (W - 140 - 4 * 12) / 5;
+  for (let i = 0; i < 5; i++) {
+    const x = 70 + i * (seg + 12);
+    const p = clamp((t - HOOK - i * SEG) / SEG);
+    roundRect(c, x, 70, seg, 8, 4); c.fillStyle = 'rgba(128,128,128,.35)'; c.fill();
+    if (p > 0) { roundRect(c, x, 70, seg * p, 8, 4); c.fillStyle = ORANGE; c.fill(); }
+  }
+}
+
+/* =====================================================================
+   ESTILO 1 — 3D Clean / Estúdio
+   ===================================================================== */
+function sceneClean(c, lt, o = {}) {
+  const bg = c.createRadialGradient(540, 860, 80, 540, 980, 1300);
+  bg.addColorStop(0, '#ffffff'); bg.addColorStop(.55, '#eceef1'); bg.addColorStop(1, '#c9cdd4');
+  c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  // horizonte do fundo infinito
+  const fl = c.createLinearGradient(0, 1050, 0, 1500);
+  fl.addColorStop(0, 'rgba(0,0,0,0)'); fl.addColorStop(1, 'rgba(0,0,0,.06)');
+  c.fillStyle = fl; c.fillRect(0, 1050, W, 870);
+  // softbox / rim light
+  const glow = c.createRadialGradient(540, 940, 10, 540, 940, 620);
+  glow.addColorStop(0, 'rgba(255,255,255,.95)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = glow; c.fillRect(0, 300, W, 1300);
+  // órbita que "descansa" em cada lateral e vira rápido (foto 2D não fica achatada por muito tempo)
+  const u = (lt / SEG) * 2, fu = u - Math.floor(u);
+  const turn = fu < 0.62 ? 0 : eInOutCubic((fu - 0.62) / 0.38);
+  const ang = o.angle ?? Math.PI * (Math.floor(u) + turn) + 0.18 * Math.sin(lt * 1.3);
+  const bob = Math.sin(lt * 1.6) * 10;
+  const sw = 0.45 + 0.55 * Math.abs(Math.cos(ang));
+  // sombra de contato
+  const sh = c.createRadialGradient(540, 1200, 10, 540, 1200, 420);
+  sh.addColorStop(0, 'rgba(0,0,0,.30)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  c.save(); c.translate(540, 1200); c.scale(sw, 0.12); c.translate(-540, -1200); c.fillStyle = sh; c.fillRect(0, 700, W, 1000); c.restore();
+  drawSneaker(c, 540, 1010 + bob, 1.45, ang, 'clean');
+  // reflexo especular do softbox
+  if (!o.noLabel) {
+    // trilho de órbita
+    c.save(); c.strokeStyle = 'rgba(0,0,0,.12)'; c.lineWidth = 2; c.setLineDash([4, 12]);
+    c.beginPath(); c.ellipse(540, 1200, 470, 70, 0, 0, Math.PI * 2); c.stroke();
+    const dx = 540 + Math.cos(ang + Math.PI / 2) * 470, dy = 1200 + Math.sin(ang + Math.PI / 2) * 70;
+    c.setLineDash([]); c.fillStyle = ORANGE; c.beginPath(); c.arc(dx, dy, 10, 0, 7); c.fill();
+    c.restore();
+    c.save(); c.font = '500 26px Mono'; c.fillStyle = 'rgba(0,0,0,.45)';
+    c.fillText(`ORBIT ${String(Math.round((lt / SEG) * 360) % 361).padStart(3, '0')}°`, 70, 1470);
+    c.textAlign = 'right'; c.fillText('SOFT RIM · 5600K', 1010, 1470); c.restore();
+    header(c, 1, '3D Clean /\nEstúdio', lt, false);
+    promptBox(c, 'product hero shot, white seamless studio, soft rim light, slow 360 orbit, photorealistic', lt, false);
+  }
+}
+
+/* =====================================================================
+   ESTILO 2 — Colagem / Stop Motion (12 fps travado)
+   ===================================================================== */
+function sceneCollage(c, lt, o = {}) {
+  const st = Math.floor(lt * 12);           // passo de 12 fps
+  const q = st / 12;
+  c.drawImage(PAPER, 0, 0, W, H);
+  c.fillStyle = HALFTONE; c.fillRect(0, 0, W, H);
+  const jag = (cx, cy, r, n, seed, rot) => {
+    c.beginPath();
+    for (let i = 0; i < n; i++) {
+      const a = rot + i / n * Math.PI * 2; const rr = r * (0.82 + rnd(seed + i) * 0.3);
+      c.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+    }
+    c.closePath();
+  };
+  // pedaços de papel rasgado
+  const blobs = [
+    [250, 760, 360, '#ffd23f', 3], [860, 1240, 380, '#2b59c3', 7], [180, 1450, 260, '#ff6fa8', 11], [900, 560, 220, '#36c9a3', 17],
+  ];
+  blobs.forEach(([x, y, r, col, s], i) => {
+    const jx = (rnd(st * 3 + s) - .5) * 14, jy = (rnd(st * 5 + s) - .5) * 14;
+    const pop = eOutBack(prog(q, i * 0.12, i * 0.12 + 0.35));
+    if (pop <= 0) return;
+    c.save(); c.translate(x + jx, y + jy); c.scale(pop, pop);
+    c.fillStyle = 'rgba(60,30,0,.18)'; jag(10, 12, r, 34, s, q * 0.4 + s); c.fill();
+    c.fillStyle = col; jag(0, 0, r, 34, s, q * 0.4 + s); c.fill();
+    c.globalAlpha = .35; c.fillStyle = HALFTONE_DARK; c.fill();
+    c.restore();
+  });
+  // fita adesiva + estrelas
+  const star = (x, y, r, col, rot) => {
+    c.save(); c.translate(x, y); c.rotate(rot); c.beginPath();
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; const rr = i % 2 ? r * .45 : r; c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    c.closePath(); c.fillStyle = '#fffdf6'; c.lineJoin = 'round'; c.lineWidth = 14; c.strokeStyle = '#fffdf6'; c.stroke(); c.fillStyle = col; c.fill(); c.restore();
+  };
+  star(860, 900, 70, '#ff6fa8', st * 0.35);
+  star(170, 1130, 54, '#ffd23f', -st * 0.3);
+  star(800, 1520, 44, ORANGE, st * 0.5);
+  // tênis recortado, movimento "travado"
+  const ang = o.angle ?? (Math.floor(lt * 12) % 24) / 24 * Math.PI * 2 * 0.25 - 0.4;
+  const jx = (rnd(st * 7.1) - .5) * 16, jy = (rnd(st * 3.3) - .5) * 16, jr = (rnd(st * 9.7) - .5) * 0.08;
+  const hop = Math.abs(Math.sin(q * Math.PI * 1.2)) * -50;
+  drawSneaker(c, 540 + jx, 1010 + jy + hop, 1.32, ang, 'paper', { rot: jr - 0.06 });
+  // vista de cima do produto como mais um recorte de revista
+  if (q > 1.4) { const pk = eOutBack(prog(q, 1.4, 1.75)); c.save(); c.translate(860 + (rnd(st * 4.4) - .5) * 10, 1500); c.rotate(0.35 + (rnd(st * 6.1) - .5) * 0.06); c.scale(pk, pk); c.shadowColor = 'rgba(40,20,0,.35)'; c.shadowOffsetX = 8; c.shadowOffsetY = 10; const tv = V.paper.top; c.drawImage(tv, -tv.width * .2, -tv.height * .2, tv.width * .4, tv.height * .4); c.restore(); }
+  // fita
+  c.save(); c.translate(380 + jx, 830 + jy); c.rotate(-0.5); c.fillStyle = 'rgba(255,245,200,.75)'; c.fillRect(-70, -20, 140, 40); c.restore();
+  // letras de revista
+  const word = 'PLAY!';
+  const fonts = ['900 140px Inter', '700 150px Serif', '700 160px LSerif', '800 140px Mono', '900 150px Inter'];
+  const bgs = ['#111', '#ff5a1f', '#fffdf6', '#2b59c3', '#ffd23f'];
+  const fgs = ['#ffd23f', '#fff', '#111', '#fff', '#111'];
+  if (!o.noLabel) {
+    for (let i = 0; i < word.length; i++) {
+      const appear = prog(q, 0.6 + i * 0.17, 0.7 + i * 0.17);
+      if (appear <= 0) continue;
+      const x = 150 + i * 190, y = 1360 + (i % 2) * 40;
+      c.save(); c.translate(x + (rnd(st + i * 13) - .5) * 8, y + (rnd(st * 2 + i) - .5) * 8);
+      c.rotate((rnd(i * 31) - .5) * 0.5 + (rnd(st + i) - .5) * 0.05);
+      c.font = fonts[i]; c.textAlign = 'center'; c.textBaseline = 'middle';
+      const w = c.measureText(word[i]).width + 40;
+      c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(-w / 2 + 8, -88 + 10, w, 176);
+      c.fillStyle = bgs[i]; c.fillRect(-w / 2, -88, w, 176);
+      c.fillStyle = fgs[i]; c.fillText(word[i], 0, 6);
+      c.restore();
+    }
+    // header em estilo recorte
+    const k = prog(q, 0, 0.25) > 0 ? 1 : 0;
+    c.save(); c.globalAlpha = k;
+    c.translate(0, 0);
+    c.font = '800 30px Mono';
+    roundRect(c, 70, 150, 260, 58, 4); c.fillStyle = ORANGE; c.fill(); c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText('ESTILO 02/05', 92, 180);
+    const words = [['Colagem', '900 96px Inter', '#111', '#fffdf6', -0.04], ['/ Stop', '700 92px Serif', '#fff', '#2b59c3', 0.03], ['Motion', '700 100px LSerif', '#111', '#ffd23f', -0.02]];
+    let xx = 68;
+    words.forEach(([w, f, fg, bgc, r], i) => {
+      c.font = f; const ww = c.measureText(w).width + 36;
+      const y = i < 2 ? 300 : 410; if (i === 2) xx = 68;
+      c.save(); c.translate(xx + ww / 2, y); c.rotate(r + (rnd(st + i * 5) - .5) * 0.03);
+      c.fillStyle = 'rgba(0,0,0,.2)'; c.fillRect(-ww / 2 + 6, -58, ww, 112);
+      c.fillStyle = bgc; c.fillRect(-ww / 2, -64, ww, 112); c.fillStyle = fg; c.textAlign = 'center'; c.fillText(w, 0, -6); c.restore();
+      xx += ww + 16;
+    });
+    c.restore();
+    c.save(); c.font = '800 28px Mono'; c.fillStyle = '#111'; c.textAlign = 'right';
+    c.fillText('● 12 FPS', 1010, 182); c.restore();
+    promptBox(c, 'paper cutout collage animation, stop motion, halftone texture, playful', q, false);
+  }
+}
+
+/* =====================================================================
+   ESTILO 3 — Neon / Cyberpunk
+   ===================================================================== */
+const BUILD = [];
+for (let i = 0; i < 40; i++) BUILD.push({ w: 90 + rnd(i) * 140, h: 300 + rnd(i + 50) * 700, layer: i % 2 });
+function sceneNeon(c, lt, o = {}) {
+  const bg = c.createLinearGradient(0, 0, 0, 1350);
+  bg.addColorStop(0, '#04010d'); bg.addColorStop(.6, '#160534'); bg.addColorStop(1, '#3a0c5c');
+  c.fillStyle = bg; c.fillRect(0, 0, W, H);
+  // lua / sol sintético
+  const sun = c.createRadialGradient(540, 760, 10, 540, 760, 420);
+  sun.addColorStop(0, 'rgba(255,43,214,.55)'); sun.addColorStop(1, 'rgba(255,43,214,0)');
+  c.fillStyle = sun; c.fillRect(0, 300, W, 900);
+  const horizon = 1350;
+  // prédios (2 camadas, parallax)
+  for (let layer = 0; layer < 2; layer++) {
+    let x = -((lt * (layer ? 40 : 18)) % 260) - 60;
+    let i = layer * 7;
+    while (x < W + 100) {
+      const b = BUILD[i % BUILD.length]; const hh = b.h * (layer ? 0.75 : 1);
+      c.fillStyle = layer ? '#0d0420' : '#1b0a3a';
+      c.fillRect(x, horizon - hh, b.w, hh);
+      // janelas
+      for (let wy = horizon - hh + 30; wy < horizon - 20; wy += 34) for (let wx = x + 14; wx < x + b.w - 14; wx += 26) {
+        const r = rnd(wx * 0.1 + wy * 0.37 + i);
+        if (r > 0.62) {
+          const flick = rnd(Math.floor(lt * 8) + wx + wy) > 0.97 ? 0.2 : 1;
+          c.fillStyle = r > 0.9 ? `rgba(255,43,214,${.8 * flick})` : r > 0.78 ? `rgba(0,229,255,${.7 * flick})` : `rgba(255,214,90,${.5 * flick})`;
+          c.fillRect(wx, wy, 12, 16);
+        }
+      }
+      x += b.w + 8; i++;
+    }
+  }
+  // letreiros neon
+  const sign = (x, y, txt, col, size, on) => {
+    c.save(); c.font = `900 ${size}px Inter`; c.textAlign = 'center';
+    c.shadowColor = col; c.shadowBlur = 40 * on; c.strokeStyle = col; c.lineWidth = 4; c.globalAlpha = 0.25 + 0.75 * on;
+    c.strokeText(txt, x, y); c.shadowBlur = 0; c.fillStyle = 'rgba(255,255,255,.9)'; c.globalAlpha = on; c.lineWidth = 1.5; c.strokeStyle = '#fff'; c.strokeText(txt, x, y);
+    c.restore();
+  };
+  sign(210, 640, 'NEON', '#ff2bd6', 110, rnd(Math.floor(lt * 10)) > 0.12 ? 1 : 0.2);
+  sign(880, 560, '24H', '#00e5ff', 90, 1);
+  sign(860, 1180, 'IA', '#ffd65a', 120, rnd(Math.floor(lt * 7) + 3) > 0.08 ? 1 : 0.1);
+  // chão molhado
+  const fl = c.createLinearGradient(0, horizon, 0, H);
+  fl.addColorStop(0, '#2a0a4a'); fl.addColorStop(1, '#05010d');
+  c.fillStyle = fl; c.fillRect(0, horizon, W, H - horizon);
+  // reflexos verticais
+  for (let i = 0; i < 14; i++) {
+    const x = rnd(i * 7) * W, col = i % 3 === 0 ? '0,229,255' : i % 3 === 1 ? '255,43,214' : '255,214,90';
+    const g = c.createLinearGradient(0, horizon, 0, H);
+    g.addColorStop(0, `rgba(${col},.45)`); g.addColorStop(1, `rgba(${col},0)`);
+    c.fillStyle = g; c.fillRect(x + Math.sin(lt * 3 + i) * 4, horizon, 10 + rnd(i) * 30, H - horizon);
+  }
+  // grade synthwave
+  c.save(); c.strokeStyle = 'rgba(255,43,214,.35)'; c.lineWidth = 2;
+  for (let i = -12; i <= 12; i++) { c.beginPath(); c.moveTo(540 + i * 40, horizon); c.lineTo(540 + i * 260, H); c.stroke(); }
+  for (let i = 0; i < 10; i++) { const k = ((i + (lt * 1.5) % 1) / 10); const y = horizon + Math.pow(k, 2) * (H - horizon); c.globalAlpha = k; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+  c.restore();
+  // tênis flutuando + reflexo
+  const ang = o.angle ?? Math.sin(lt * 0.9) * 0.9 + 0.2;
+  const bob = Math.sin(lt * 2.2) * 26;
+  c.save(); c.globalAlpha = 0.28; c.translate(0, 2 * 1420); c.scale(1, -1);
+  drawSneaker(c, 540 + Math.sin(lt * 4) * 3, 1010 + bob, 1.35, ang, 'neon'); c.restore();
+  const halo = c.createRadialGradient(540, 1000, 50, 540, 1000, 560);
+  halo.addColorStop(0, 'rgba(0,229,255,.25)'); halo.addColorStop(1, 'rgba(0,229,255,0)');
+  c.fillStyle = halo; c.fillRect(0, 400, W, 1200);
+  drawSneaker(c, 540, 1010 + bob, 1.35, ang, 'neon');
+  // chuva
+  c.save(); c.strokeStyle = 'rgba(180,220,255,.35)'; c.lineWidth = 2;
+  for (let i = 0; i < 220; i++) {
+    const sp = 1400 + rnd(i) * 900; const x0 = rnd(i + 0.5) * (W + 300);
+    const y = ((rnd(i + 0.3) * H + lt * sp) % (H + 200)) - 100; const x = x0 - (y * 0.18);
+    c.beginPath(); c.moveTo(x, y); c.lineTo(x - 9, y + 46); c.stroke();
+  }
+  // respingos no chão
+  for (let i = 0; i < 18; i++) {
+    const per = 0.6 + rnd(i) * 0.5; const ph = ((lt + rnd(i + 9)) % per) / per;
+    c.strokeStyle = `rgba(0,229,255,${(1 - ph) * .5})`; c.beginPath();
+    c.ellipse(rnd(i * 3) * W, horizon + 80 + rnd(i * 5) * 450, ph * 50, ph * 10, 0, 0, 7); c.stroke();
+  }
+  c.restore();
+  if (!o.noLabel) {
+    header(c, 3, 'Neon /\nCyberpunk', lt, true);
+    promptBox(c, 'sneaker floating in neon city, rain reflections, cyberpunk, glitch transitions', lt, true);
+  }
+  // glitch
+  if (!o.noGlitch) {
+    const gl = (lt < 0.22) || (lt > 2.35 && lt < 2.6) || (lt > 4.9 && lt < 5.1) || (lt > SEG - 0.28);
+    if (gl) glitch(c, Math.floor(lt * 30), 1);
+  }
+}
+function glitch(c, seed, amt) {
+  const t = TMP.getContext('2d'); t.clearRect(0, 0, W, H); t.drawImage(cv, 0, 0);
+  for (let i = 0; i < 14; i++) {
+    const y = rnd(seed * 3 + i) * H, h = 20 + rnd(seed + i * 7) * 120, dx = (rnd(seed * 11 + i) - .5) * 160 * amt;
+    c.drawImage(TMP, 0, y, W, h, dx, y, W, h);
+  }
+  c.save(); c.globalCompositeOperation = 'screen'; c.globalAlpha = .45;
+  c.fillStyle = '#ff004c'; c.drawImage(TMP, 14 * amt, 0); c.globalCompositeOperation = 'multiply';
+  c.fillStyle = 'rgba(0,229,255,.25)'; c.fillRect(0, 0, W, H); c.restore();
+  c.fillStyle = 'rgba(0,229,255,.7)'; c.fillRect(0, rnd(seed) * H, W, 6);
+  c.fillStyle = 'rgba(255,43,214,.7)'; c.fillRect(0, rnd(seed + 1) * H, W, 4);
+}
+
+/* =====================================================================
+   ESTILO 4 — Minimalista Tipográfico (varejo)
+   ===================================================================== */
+function sceneType(c, lt, o = {}) {
+  c.fillStyle = '#f3f0ea'; c.fillRect(0, 0, W, H);
+  // letreiros contornados ao fundo (marquee)
+  c.save(); c.font = '900 150px Inter'; c.lineWidth = 2; c.strokeStyle = 'rgba(0,0,0,.08)';
+  const row = 'CONFORTO • LEVEZA • PREÇO • ';
+  const rw = c.measureText(row).width;
+  for (let r = 0; r < 9; r++) {
+    const dir = r % 2 ? 1 : -1; const off = ((lt * 90 * dir) % rw + rw) % rw;
+    for (let k = -1; k < 2; k++) c.strokeText(row, -off + k * rw, 200 + r * 200);
+  }
+  c.restore();
+  // produto parado
+  const sh = c.createRadialGradient(540, 1195, 10, 540, 1195, 380);
+  sh.addColorStop(0, 'rgba(0,0,0,.22)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  c.save(); c.translate(540, 1195); c.scale(1, .1); c.translate(-540, -1195); c.fillStyle = sh; c.fillRect(0, 700, W, 1000); c.restore();
+  drawSneaker(c, 540, 1070, 1.1, o.angle ?? 0.12, 'mono');
+
+  // palavras-chave cinéticas
+  // CONFORTO: desliza da esquerda, tracking abre e fecha
+  const k1 = eOutExpo(prog(lt, 0.4, 1.2));
+  c.save(); c.font = '900 168px Inter'; c.fillStyle = '#111'; c.textAlign = 'center';
+  c.letterSpacing = `${lerp(60, -4, k1)}px`;
+  c.globalAlpha = k1; c.fillText('CONFORTO', 540 + (1 - k1) * -700, 660);
+  c.restore();
+  if (lt > 1.0) {
+    const k = eOutCubic(prog(lt, 1.0, 1.4));
+    c.save(); c.globalAlpha = k; c.font = '500 34px Mono'; c.fillStyle = '#555'; c.textAlign = 'center';
+    c.fillText('amortecimento que abraça o pé', 540, 720); c.restore();
+  }
+  // LEVEZA: letras flutuam com stagger
+  const L = 'LEVEZA';
+  c.save(); c.font = '900 168px Inter'; c.textAlign = 'left';
+  const totalW = c.measureText(L).width; let x = 540 - totalW / 2;
+  for (let i = 0; i < L.length; i++) {
+    const k = eOutBack(prog(lt, 2.2 + i * 0.07, 2.8 + i * 0.07));
+    const float = lt > 3.1 ? Math.sin(lt * 3 + i * 0.9) * 10 : 0;
+    c.globalAlpha = clamp(k); c.fillStyle = i % 2 ? '#111' : ORANGE;
+    c.fillText(L[i], x, 1440 + (1 - k) * 160 + float);
+    x += c.measureText(L[i]).width;
+  }
+  c.restore();
+  if (lt > 2.8) {
+    const k = eOutCubic(prog(lt, 2.8, 3.2));
+    c.save(); c.globalAlpha = k; c.font = '500 34px Mono'; c.fillStyle = '#555'; c.textAlign = 'center';
+    c.fillText('leve como deve ser', 540, 1510); c.restore();
+  }
+  // PREÇO: carimbo com impacto
+  if (lt > 4.4) {
+    const k = prog(lt, 4.4, 4.65); const s = lerp(2.6, 1, eOutCubic(k));
+    c.save(); c.translate(810, 400); c.rotate(-0.12); c.scale(s, s); c.globalAlpha = clamp(k * 1.5);
+    roundRect(c, -170, -70, 340, 140, 18); c.fillStyle = ORANGE; c.fill();
+    c.font = '900 92px Inter'; c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('PREÇO', 0, 6);
+    c.restore();
+    const k2 = eOutBack(prog(lt, 5.0, 5.4));
+    if (k2 > 0) {
+      c.save(); c.translate(540, 1690); c.scale(k2, k2); c.textAlign = 'center';
+      c.font = '500 40px Inter'; c.fillStyle = '#777'; c.fillText(`de ${PRICE_OLD} por`, 0, -90);
+      c.font = '900 150px Inter'; c.fillStyle = '#111'; c.fillText(PRICE_NEW, 0, 40);
+      c.restore();
+      // risco no preço antigo
+      c.font = '500 40px Inter';
+      const full = c.measureText(`de ${PRICE_OLD} por`).width, pre = c.measureText('de ').width, mid = c.measureText(PRICE_OLD).width;
+      const sx0 = 540 + (-full / 2 + pre) * k2, ks = prog(lt, 5.35, 5.6);
+      c.strokeStyle = ORANGE; c.lineWidth = 6;
+      c.beginPath(); c.moveTo(sx0, 1690 - 104 * k2); c.lineTo(sx0 + mid * k2 * ks, 1690 - 104 * k2); c.stroke();
+    }
+  }
+  // linhas-guia girando em volta do produto
+  c.save(); c.strokeStyle = 'rgba(255,90,31,.5)'; c.lineWidth = 3; c.setLineDash([2, 14]);
+  c.beginPath(); c.ellipse(540, 1010, 470 * eOutCubic(prog(lt, 0, .6)), 300, 0, lt * 0.6, lt * 0.6 + Math.PI * 1.6); c.stroke(); c.restore();
+  if (!o.noLabel) {
+    const k = eOutCubic(prog(lt, 0.05, 0.5));
+    c.save(); c.globalAlpha = k; c.font = '800 30px Mono'; c.textBaseline = 'middle';
+    roundRect(c, 70, 150, 260, 58, 29); c.fillStyle = '#111'; c.fill(); c.fillStyle = '#fff'; c.fillText('ESTILO 04/05', 92, 180);
+    c.font = '700 40px Inter'; c.fillStyle = '#111'; c.fillText('Minimalista Tipográfico', 70, 270);
+    c.font = '500 28px Mono'; c.fillStyle = ORANGE; c.fillText('ótimo pra varejo ↗', 70, 320);
+    c.restore();
+  }
+}
+
+/* =====================================================================
+   ESTILO 5 — Cinematográfico (câmera lenta, asfalto molhado)
+   ===================================================================== */
+/* Cena filmada gerada por IA de vídeo (Gemini Omni) a partir das fotos do produto,
+   desacelerada com interpolação de quadros para o toque da sola cair na fala. */
+const CINE = { cache: new Map(), pending: new Set(), frames: 225, video: null };
+function cineFrame(lt) {
+  const i = Math.max(0, Math.min(CINE.frames - 1, Math.round(lt * 30)));
+  if (/render/.test(location.hash)) {
+    const img = CINE.cache.get(i);
+    if (!img) CINE.pending.add(i);
+    return img || null;
+  }
+  // pré-visualização no navegador: usa o próprio mp4
+  if (!CINE.video) { CINE.video = document.createElement('video'); CINE.video.src = 'assets/cine_retime.mp4'; CINE.video.muted = true; CINE.video.preload = 'auto'; }
+  if (Math.abs(CINE.video.currentTime - i / 30) > 0.05) CINE.video.currentTime = i / 30;
+  return CINE.video.readyState >= 2 ? CINE.video : null;
+}
+async function loadPendingCine() {
+  const need = [...CINE.pending]; CINE.pending.clear();
+  await Promise.all(need.map(async i => CINE.cache.set(i, await loadImg(`cine/f${String(i + 1).padStart(4, '0')}.jpg`))));
+  if (CINE.cache.size > 40) for (const k of [...CINE.cache.keys()].slice(0, CINE.cache.size - 40)) CINE.cache.delete(k);
+  return need.length > 0;
+}
+function sceneCine(c, lt, o = {}) {
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const f = cineFrame(lt);
+  if (f) c.drawImage(f, 0, 0, W, H);
+  // vinheta leve para assentar os textos
+  const vg = c.createRadialGradient(540, 1100, 500, 540, 1100, 1250);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)');
+  c.fillStyle = vg; c.fillRect(0, 0, W, H);
+  if (!o.noLabel) {
+    // tarjas anamórficas
+    const bar = 250 * eOutCubic(prog(lt, 0, 0.5));
+    c.fillStyle = '#000'; c.fillRect(0, 0, W, bar); c.fillRect(0, H - bar, W, bar);
+    const kk = eOutCubic(prog(lt, 0.2, 0.7));
+    c.save(); c.globalAlpha = kk; c.font = '800 26px Mono'; c.fillStyle = ORANGE; c.textBaseline = 'middle';
+    c.fillText('ESTILO 05/05', 70, 120); c.font = '300 64px Inter'; c.fillStyle = '#fff'; c.letterSpacing = '14px';
+    c.fillText('CINEMATOGRÁFICO', 66, 190); c.letterSpacing = '0px';
+    c.font = '500 24px Mono'; c.fillStyle = 'rgba(255,255,255,.55)'; c.textAlign = 'right';
+    c.fillText('2.39:1 · 240 FPS', 1010, 120); c.restore();
+    // prompt dentro da tarja inferior
+    c.save(); c.globalAlpha = eOutCubic(prog(lt, 0.4, 0.9)); c.font = '800 22px Mono'; c.fillStyle = ORANGE;
+    c.fillText('PROMPT BASE  >_', 70, H - 190);
+    c.font = '500 27px Mono'; c.fillStyle = '#d8d8d8';
+    const txt = '"cinematic slow motion, sneaker stepping on wet asphalt, dramatic lighting, anamorphic"';
+    const shown = txt.slice(0, Math.floor(clamp((lt - 0.6) * 55, 0, txt.length)));
+    wrapLines(c, txt, 940).reduce((left, l, i) => { c.fillText(l.slice(0, Math.max(0, left)), 70, H - 140 + i * 38); return left - l.length - 1; }, shown.length);
+    c.restore();
+  }
+}
+
+const SCENES = [sceneClean, sceneCollage, sceneNeon, sceneType, sceneCine];
+
+/* =====================================================================
+   GANCHO 0–3s
+   ===================================================================== */
+function hook(c, t) {
+  const cut = Math.floor(t / BEAT);
+  const order = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4];
+  const idx = order[cut % order.length];
+  const spin = t * Math.PI * 2.6;
+  const ltFor = [1.2, 1.4, 1.6, -1.0, 5.0];
+  // zoom punch a cada corte
+  const local = t - cut * BEAT;
+  const z = 1 + 0.08 * (1 - eOutCubic(clamp(local / 0.25)));
+  c.save(); c.translate(540, 1000); c.scale(z, z); c.translate(-540, -1000);
+  SCENES[idx](c, ltFor[idx] + local, { angle: idx === 4 ? undefined : spin, noLabel: true, noGlitch: true });
+  c.restore();
+  if (idx === 2 && local < 0.12) glitch(c, cut * 7, 0.7);
+  // leve sombra só nas bordas (o cenário continua vivo)
+  const sh = c.createLinearGradient(0, 0, 0, H);
+  sh.addColorStop(0, 'rgba(0,0,0,.35)'); sh.addColorStop(.18, 'rgba(0,0,0,0)'); sh.addColorStop(.75, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.45)');
+  c.fillStyle = sh; c.fillRect(0, 0, W, H);
+  // contador de estilo
+  c.save(); c.font = '800 26px Mono'; c.textBaseline = 'middle';
+  const tag = `ESTILO 0${idx + 1}/05`; const tw = c.measureText(tag).width + 36;
+  roundRect(c, 1010 - tw, 92, tw, 48, 24); c.fillStyle = 'rgba(0,0,0,.55)'; c.fill();
+  c.fillStyle = '#fff'; c.fillText(tag, 1010 - tw + 18, 117); c.restore();
+
+  // tipografia em blocos, revelada por máscara no ritmo da narração
+  const block = (text, x, y, size, bg, fg, t0, opts = {}) => {
+    const k = eOutExpo(prog(t, t0, t0 + 0.32));
+    if (k <= 0) return;
+    c.save(); c.translate(x, y); c.rotate(opts.rot ?? -0.035);
+    c.font = `900 ${size}px Inter`; c.letterSpacing = `${-size * 0.03}px`;
+    const w = c.measureText(text).width + size * 0.5, h = size * 1.2;
+    // sombra dura
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(10, 12, w * k, h);
+    c.beginPath(); c.rect(0, 0, w * k, h); c.clip();
+    c.fillStyle = bg; c.fillRect(0, 0, w, h);
+    c.fillStyle = fg; c.textBaseline = 'alphabetic';
+    c.fillText(text, size * 0.25 - (1 - k) * 60, size * 0.98);
+    c.restore();
+    return w;
+  };
+  block('1 PRODUTO.', 56, 200, 132, '#ffffff', '#0d0d10', 0.12);
+  block('5 VÍDEOS', 56, 372, 112, ORANGE, '#ffffff', 1.12);
+  block('COMPLETAMENTE', 56, 518, 74, '#0d0d10', '#ffffff', 1.95);
+  block('DIFERENTES.', 56, 616, 74, '#0d0d10', '#ffffff', 2.7);
+  // "TUDO COM IA." palavra a palavra, com carimbo no "IA"
+  const words = [['TUDO', 3.56, '#fff'], ['COM', 3.84, '#fff']];
+  c.save(); c.font = '900 128px Inter'; c.textBaseline = 'alphabetic'; c.letterSpacing = '-4px';
+  let wx = 60; const wy = 1640;
+  for (const [wd, t0, col] of words) {
+    const k = prog(t, t0, t0 + 0.18);
+    const ww = c.measureText(wd).width;
+    if (k > 0) {
+      const sc = lerp(1.5, 1, eOutCubic(k));
+      c.save(); c.translate(wx + ww / 2, wy); c.scale(sc, sc); c.globalAlpha = clamp(k * 2);
+      c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = 30; c.fillStyle = col; c.textAlign = 'center'; c.fillText(wd, 0, 0); c.restore();
+    }
+    wx += ww + 34;
+  }
+  const ki = prog(t, 4.05, 4.3);
+  if (ki > 0) {
+    const iw = c.measureText('IA.').width + 60, sc = lerp(2.2, 1, eOutBack(ki));
+    c.save(); c.translate(wx + iw / 2 - 10, wy - 46); c.rotate(-0.08); c.scale(sc, sc); c.globalAlpha = clamp(ki * 3);
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(-iw / 2 + 10, -80, iw, 160);
+    c.fillStyle = ORANGE; c.fillRect(-iw / 2, -92, iw, 160);
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText('IA.', 0, 34); c.restore();
+  }
+  c.restore();
+  // flash nos cortes
+  if (local < 0.06 && cut > 0) { c.fillStyle = `rgba(255,255,255,${0.7 * (1 - local / 0.06)})`; c.fillRect(0, 0, W, H); }
+}
+
+/* =====================================================================
+   FECHAMENTO 28–33s: grid com os 5 estilos
+   ===================================================================== */
+function closing(c, lt) {
+  c.fillStyle = '#0d0d10'; c.fillRect(0, 0, W, H);
+  const tileW = 490, tileH = 380, gx = 40, gy = 430, gap = 20;
+  const focus = [1000, 1000, 1000, 980, 1250];
+  const s = tileW / W;
+  const hi = lt > 3.6 ? Math.floor((lt - 3.6) / 0.32) % 5 : -1;
+  for (let i = 0; i < 6; i++) {
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = gx + col * (tileW + gap), y = gy + row * (tileH + gap);
+    const k = eOutBack(prog(lt, 0.05 + i * 0.07, 0.45 + i * 0.07));
+    if (k <= 0) continue;
+    c.save(); c.translate(x + tileW / 2, y + tileH / 2); c.scale(k, k); c.translate(-tileW / 2, -tileH / 2);
+    roundRect(c, 0, 0, tileW, tileH, 28); c.save(); c.clip();
+    if (i < 5) {
+      c.save(); c.translate(0, tileH / 2 - focus[i] * s); c.scale(s, s);
+      SCENES[i](c, (i === 4 ? 5.2 : 1.5) + lt * (i === 4 ? 0.3 : 1), { noLabel: true, noGlitch: true });
+      c.restore();
+    } else {
+      c.fillStyle = ORANGE; c.fillRect(0, 0, tileW, tileH);
+      const p = 1 + Math.sin(lt * 7) * 0.04;
+      c.save(); c.translate(tileW / 2, tileH / 2); c.scale(p, p);
+      // balão de comentário
+      c.fillStyle = '#fff'; roundRect(c, -150, -120, 300, 170, 36); c.fill();
+      c.beginPath(); c.moveTo(-60, 46); c.lineTo(-100, 100); c.lineTo(-10, 46); c.fill();
+      c.fillStyle = ORANGE; c.font = '900 110px Inter'; c.textAlign = 'center'; c.fillText('1–5', 0, 2);
+      c.fillStyle = '#fff'; c.font = '900 40px Inter'; c.fillText('COMENTA', 0, 140);
+      c.restore();
+    }
+    c.restore();
+    if (i < 5) {
+      if (hi === i) { roundRect(c, -3, -3, tileW + 6, tileH + 6, 30); c.strokeStyle = ORANGE; c.lineWidth = 10; c.stroke(); }
+      c.fillStyle = hi === i ? ORANGE : '#fff'; c.beginPath(); c.arc(54, 54, 36, 0, 7); c.fill();
+      c.fillStyle = hi === i ? '#fff' : '#111'; c.font = '900 44px Inter'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(i + 1), 54, 57);
+      c.textBaseline = 'alphabetic';
+      c.font = '800 22px Mono'; c.textAlign = 'left';
+      const names = ['3D CLEAN', 'COLAGEM', 'NEON', 'TIPOGRÁFICO', 'CINEMA'];
+      const nw = c.measureText(names[i]).width + 28;
+      roundRect(c, 18, tileH - 58, nw, 40, 20); c.fillStyle = 'rgba(0,0,0,.65)'; c.fill();
+      c.fillStyle = '#fff'; c.fillText(names[i], 32, tileH - 30);
+    }
+    c.restore();
+  }
+  // textos
+  c.save(); c.textAlign = 'center';
+  const a = eOutCubic(prog(lt, 0.3, 0.7));
+  c.globalAlpha = a; c.fillStyle = '#fff'; c.font = '800 70px Inter';
+  c.fillText('A IA gerou as cenas.', 540, 230 + (1 - a) * 30);
+  const b = eOutCubic(prog(lt, 1.45, 1.85));
+  c.globalAlpha = b; c.fillStyle = ORANGE; c.font = '900 70px Inter';
+  c.fillText('A direção criativa foi minha.', 540, 330 + (1 - b) * 30);
+  const d = eOutCubic(prog(lt, 3.15, 3.55));
+  c.globalAlpha = d; c.fillStyle = '#fff'; c.font = '700 50px Inter';
+  c.fillText('Qual estilo você usaria', 540, 1695 + (1 - d) * 30);
+  c.fillText('pro seu cliente?', 540, 1760 + (1 - d) * 30);
+  const e = eOutBack(prog(lt, 5.0, 5.4));
+  if (e > 0) {
+    c.globalAlpha = 1; c.translate(540, 1850); c.scale(e, e);
+    c.font = '900 46px Inter'; const w = c.measureText('Comenta o número ↓').width + 60;
+    roundRect(c, -w / 2, -42, w, 70, 35); c.fillStyle = ORANGE; c.fill(); c.fillStyle = '#fff'; c.fillText('Comenta o número ↓', 0, 8);
+  }
+  c.restore();
+  if (lt < 0.08) { c.fillStyle = `rgba(255,255,255,${0.8 * (1 - lt / 0.08)})`; c.fillRect(0, 0, W, H); }
+  if (lt > CLOSE - 0.3) { c.fillStyle = `rgba(0,0,0,${prog(lt, CLOSE - 0.3, CLOSE)})`; c.fillRect(0, 0, W, H); }
+}
+
+/* =====================================================================
+   Orquestração
+   ===================================================================== */
+function draw(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  if (t < HOOK) hook(ctx, t);
+  else if (t < HOOK + 5 * SEG) {
+    const i = Math.floor((t - HOOK) / SEG), lt = t - HOOK - i * SEG;
+    // entrada no beat: micro-zoom + flash
+    const z = 1 + 0.06 * (1 - eOutCubic(clamp(lt / 0.3)));
+    ctx.save(); ctx.translate(540, 1000); ctx.scale(z, z); ctx.translate(-540, -1000);
+    SCENES[i](ctx, lt);
+    ctx.restore();
+    if (lt < 0.1) { ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - lt / 0.1)})`; ctx.fillRect(0, 0, W, H); }
+  } else closing(ctx, t - HOOK - 5 * SEG);
+  storyBar(ctx, t);
+  ctx.restore();
+}
+window.renderFrame = async function (t) {
+  draw(t);
+  if (CINE.pending.size && await loadPendingCine()) draw(t); // quadros do clipe ainda não carregados
+};
+
+window.ready = (async () => {
+  for (const [fam, url, weight] of FONTS) {
+    const f = new FontFace(fam, `url(${url})`, { weight }); await f.load(); document.fonts.add(f);
+  }
+  buildTextures();
+  [IMG.a, IMG.b, IMG.top] = await Promise.all(['assets/produto_lado_a.png', 'assets/produto_lado_b.png', 'assets/produto_topo.png'].map(loadImg));
+  buildProduct();
+  await window.renderFrame(0);
+  return true;
+})();
+
+// preview no navegador: toca em loop
+if (!/render/.test(location.hash)) {
+  window.ready.then(() => { const t0 = performance.now(); const loop = () => { draw(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); }; loop(); });
+}
+</script>
+</body>
+</html>
