@@ -508,98 +508,35 @@ function sceneType(c, lt, o = {}) {
 /* =====================================================================
    ESTILO 5 — Cinematográfico (câmera lenta, asfalto molhado)
    ===================================================================== */
+/* Cena filmada gerada por IA de vídeo (Gemini Omni) a partir das fotos do produto,
+   desacelerada com interpolação de quadros para o toque da sola cair na fala. */
+const CINE = { cache: new Map(), pending: new Set(), frames: 225, video: null };
+function cineFrame(lt) {
+  const i = Math.max(0, Math.min(CINE.frames - 1, Math.round(lt * 30)));
+  if (/render/.test(location.hash)) {
+    const img = CINE.cache.get(i);
+    if (!img) CINE.pending.add(i);
+    return img || null;
+  }
+  // pré-visualização no navegador: usa o próprio mp4
+  if (!CINE.video) { CINE.video = document.createElement('video'); CINE.video.src = 'assets/cine_retime.mp4'; CINE.video.muted = true; CINE.video.preload = 'auto'; }
+  if (Math.abs(CINE.video.currentTime - i / 30) > 0.05) CINE.video.currentTime = i / 30;
+  return CINE.video.readyState >= 2 ? CINE.video : null;
+}
+async function loadPendingCine() {
+  const need = [...CINE.pending]; CINE.pending.clear();
+  await Promise.all(need.map(async i => CINE.cache.set(i, await loadImg(`cine/f${String(i + 1).padStart(4, '0')}.jpg`))));
+  if (CINE.cache.size > 40) for (const k of [...CINE.cache.keys()].slice(0, CINE.cache.size - 40)) CINE.cache.delete(k);
+  return need.length > 0;
+}
 function sceneCine(c, lt, o = {}) {
-  const push = 1 + lt * 0.014;
-  c.save(); c.translate(540, 1100); c.scale(push, push); c.translate(-540, -1100);
-  const bg = c.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, '#071419'); bg.addColorStop(.6, '#0c2129'); bg.addColorStop(1, '#020607');
-  c.fillStyle = bg; c.fillRect(-100, -100, W + 200, H + 200);
-  // feixe de luz volumétrico
-  c.save(); c.globalCompositeOperation = 'lighter';
-  const beam = c.createLinearGradient(900, 200, 500, 1350);
-  beam.addColorStop(0, 'rgba(255,160,80,.35)'); beam.addColorStop(1, 'rgba(255,160,80,0)');
-  c.fillStyle = beam; c.beginPath(); c.moveTo(860, 180); c.lineTo(980, 180); c.lineTo(900, 1400); c.lineTo(160, 1400); c.closePath(); c.fill();
-  c.restore();
-  const ground = 1330;
-  // asfalto molhado
-  const fl = c.createLinearGradient(0, ground, 0, H);
-  fl.addColorStop(0, '#0f1d22'); fl.addColorStop(1, '#030708');
-  c.fillStyle = fl; c.fillRect(-100, ground, W + 200, H);
-  for (let i = 0; i < 900; i++) { c.fillStyle = `rgba(200,220,230,${rnd(i) * 0.07})`; c.fillRect(rnd(i + 2) * W, ground + Math.pow(rnd(i + 3), 1.6) * 600, 2, 2); }
-  // reflexo da luz no chão
-  const rf = c.createLinearGradient(0, ground, 0, H);
-  rf.addColorStop(0, 'rgba(255,150,70,.35)'); rf.addColorStop(1, 'rgba(255,150,70,0)');
-  c.fillStyle = rf; c.fillRect(560, ground, 260, H - ground);
-
-  // pisada em câmera lenta
-  const land = 5.7;
-  const k = Math.sin(prog(lt, 0, land) * Math.PI / 2);
-  const sy = lerp(700, ground - 112 * 1.3, k);
-  const rot = lerp(-0.2, 0, eInOutCubic(prog(lt, 1.0, land + 0.1)));
-  const sc = 1.3;
-  // reflexo
-  c.save(); c.globalAlpha = 0.22; c.translate(0, 2 * ground); c.scale(1, -1);
-  drawSneaker(c, 540, sy, sc, o.angle ?? 0, 'cine', { rot }); c.restore();
-  // sombra crescente
-  const shA = 0.15 + 0.5 * k;
-  const sh = c.createRadialGradient(520, ground, 10, 520, ground, 520);
-  sh.addColorStop(0, `rgba(0,0,0,${shA})`); sh.addColorStop(1, 'rgba(0,0,0,0)');
-  c.save(); c.translate(520, ground); c.scale(1, .08); c.translate(-520, -ground); c.fillStyle = sh; c.fillRect(-100, ground - 600, W + 200, 1200); c.restore();
-  drawSneaker(c, 540, sy, sc, o.angle ?? 0, 'cine', { rot });
-
-  // impacto: respingos, ondas e poeira
-  const dt = lt - land;
-  if (dt > 0) {
-    for (let r = 0; r < 3; r++) {
-      const p = clamp((dt - r * 0.25) / 1.8); if (p <= 0) continue;
-      c.strokeStyle = `rgba(190,220,230,${(1 - p) * .5})`; c.lineWidth = 3;
-      c.beginPath(); c.ellipse(520, ground + 6, 300 + p * 520, 26 + p * 60, 0, 0, 7); c.stroke();
-    }
-    for (let i = 0; i < 60; i++) {
-      const side = i % 2 ? 1 : -1;
-      const vx = side * (80 + rnd(i) * 420), vy = -(160 + rnd(i + 5) * 520);
-      const tt = dt * 0.55; // câmera lenta
-      const x = 520 + side * (230 + rnd(i + 2) * 110) + vx * tt, y = ground + vy * tt + 600 * tt * tt;
-      if (y > ground + 10) continue;
-      c.fillStyle = `rgba(220,235,240,${clamp(1 - tt * 0.8) * 0.85})`;
-      c.beginPath(); c.ellipse(x, y, 3 + rnd(i + 8) * 5, 5 + rnd(i + 8) * 8, Math.atan2(vy + 1200 * tt, vx), 0, 7); c.fill();
-    }
-    for (let i = 0; i < 40; i++) {
-      const p = clamp(dt / 2.6); const side = i % 2 ? 1 : -1;
-      const x = 520 + side * (180 + rnd(i * 3) * 360 * (0.3 + p)), y = ground - 10 - rnd(i * 5) * 160 * p - p * 40;
-      c.fillStyle = `rgba(255,190,130,${(1 - p) * 0.18})`;
-      c.beginPath(); c.arc(x, y, 18 + rnd(i) * 40 * p, 0, 7); c.fill();
-    }
-  }
-  // poeira suspensa no feixe
-  c.save(); c.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 120; i++) {
-    const x = (rnd(i) * W + Math.sin(lt * 0.4 + i) * 30 + lt * 8) % W;
-    const y = (rnd(i + 40) * 1300 + 150 - lt * (5 + rnd(i) * 12) + 1300) % 1300 + 100;
-    const inBeam = clamp(1 - Math.abs(x - lerp(920, 530, (y - 180) / 1220)) / 380);
-    c.fillStyle = `rgba(255,200,150,${0.15 + inBeam * 0.6})`;
-    c.beginPath(); c.arc(x, y, 1.5 + rnd(i + 7) * 3.5, 0, 7); c.fill();
-  }
-  c.restore();
-  c.restore(); // push-in
-
-  // flare anamórfico
-  c.save(); c.globalCompositeOperation = 'lighter';
-  const fy = 300, fa = 0.55 + Math.sin(lt * 2) * 0.1;
-  const fg = c.createLinearGradient(0, 0, W, 0);
-  fg.addColorStop(0, 'rgba(60,140,255,0)'); fg.addColorStop(.82, `rgba(90,170,255,${fa})`); fg.addColorStop(1, 'rgba(60,140,255,0)');
-  c.fillStyle = fg; c.fillRect(0, fy - 3, W, 6);
-  const fg2 = c.createRadialGradient(900, fy, 2, 900, fy, 130);
-  fg2.addColorStop(0, 'rgba(255,240,220,.95)'); fg2.addColorStop(1, 'rgba(255,170,90,0)');
-  c.fillStyle = fg2; c.fillRect(700, fy - 140, 400, 280);
-  c.restore();
-  // color grade teal & orange + vinheta
-  const vg = c.createRadialGradient(540, 1000, 300, 540, 1000, 1150);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.75)');
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const f = cineFrame(lt);
+  if (f) c.drawImage(f, 0, 0, W, H);
+  // vinheta leve para assentar os textos
+  const vg = c.createRadialGradient(540, 1100, 500, 540, 1100, 1250);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.45)');
   c.fillStyle = vg; c.fillRect(0, 0, W, H);
-  // grão
-  c.save(); c.globalAlpha = 0.07; c.globalCompositeOperation = 'overlay';
-  c.drawImage(GRAIN[Math.floor(lt * 24) % GRAIN.length], 0, 0, W, H); c.restore();
   if (!o.noLabel) {
     // tarjas anamórficas
     const bar = 250 * eOutCubic(prog(lt, 0, 0.5));
@@ -631,7 +568,7 @@ function hook(c, t) {
   const order = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4];
   const idx = order[cut % order.length];
   const spin = t * Math.PI * 2.6;
-  const ltFor = [1.2, 1.4, 1.6, -1.0, 6.2];
+  const ltFor = [1.2, 1.4, 1.6, -1.0, 5.0];
   // zoom punch a cada corte
   const local = t - cut * BEAT;
   const z = 1 + 0.08 * (1 - eOutCubic(clamp(local / 0.25)));
@@ -702,7 +639,7 @@ function hook(c, t) {
 function closing(c, lt) {
   c.fillStyle = '#0d0d10'; c.fillRect(0, 0, W, H);
   const tileW = 490, tileH = 380, gx = 40, gy = 430, gap = 20;
-  const focus = [1000, 1000, 1000, 980, 1150];
+  const focus = [1000, 1000, 1000, 980, 1250];
   const s = tileW / W;
   const hi = lt > 3.6 ? Math.floor((lt - 3.6) / 0.32) % 5 : -1;
   for (let i = 0; i < 6; i++) {
@@ -714,7 +651,7 @@ function closing(c, lt) {
     roundRect(c, 0, 0, tileW, tileH, 28); c.save(); c.clip();
     if (i < 5) {
       c.save(); c.translate(0, tileH / 2 - focus[i] * s); c.scale(s, s);
-      SCENES[i](c, (i === 4 ? 6.0 : 1.5) + lt * (i === 4 ? 0.2 : 1), { noLabel: true, noGlitch: true });
+      SCENES[i](c, (i === 4 ? 5.2 : 1.5) + lt * (i === 4 ? 0.3 : 1), { noLabel: true, noGlitch: true });
       c.restore();
     } else {
       c.fillStyle = ORANGE; c.fillRect(0, 0, tileW, tileH);
@@ -767,7 +704,7 @@ function closing(c, lt) {
 /* =====================================================================
    Orquestração
    ===================================================================== */
-window.renderFrame = function (t) {
+function draw(t) {
   ctx.save(); ctx.clearRect(0, 0, W, H);
   if (t < HOOK) hook(ctx, t);
   else if (t < HOOK + 5 * SEG) {
@@ -781,6 +718,10 @@ window.renderFrame = function (t) {
   } else closing(ctx, t - HOOK - 5 * SEG);
   storyBar(ctx, t);
   ctx.restore();
+}
+window.renderFrame = async function (t) {
+  draw(t);
+  if (CINE.pending.size && await loadPendingCine()) draw(t); // quadros do clipe ainda não carregados
 };
 
 window.ready = (async () => {
@@ -790,13 +731,13 @@ window.ready = (async () => {
   buildTextures();
   [IMG.a, IMG.b, IMG.top] = await Promise.all(['assets/produto_lado_a.png', 'assets/produto_lado_b.png', 'assets/produto_topo.png'].map(loadImg));
   buildProduct();
-  window.renderFrame(0);
+  await window.renderFrame(0);
   return true;
 })();
 
 // preview no navegador: toca em loop
 if (!/render/.test(location.hash)) {
-  window.ready.then(() => { const t0 = performance.now(); const loop = () => { window.renderFrame(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); }; loop(); });
+  window.ready.then(() => { const t0 = performance.now(); const loop = () => { draw(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); }; loop(); });
 }
 </script>
 </body>
