@@ -35,7 +35,7 @@ const VOICE = [0.1, ...[0, 1, 2, 3, 4].map(i => HOOK + i * SEG + 0.15), HOOK + 5
 
   if (stills) {
     fs.mkdirSync(path.join(dir, 'stills'), { recursive: true });
-    const ts = [0.5, 2.0, 4.0, 6.5, 10, 14, 17.5, 21, 25, 30, 33, 37, 41.5, 44, 48];
+    const ts = (process.env.TS || "0.5,2,4,6.5,10,14,17.5,21,25,30,33,37,41.5,44,48").split(",").map(Number);
     for (const t of ts) fs.writeFileSync(path.join(dir, 'stills', `t${String(t.toFixed(1)).padStart(4, '0')}.jpg`), Buffer.from(await grab(t), 'base64'));
     await browser.close(); server.close(); return;
   }

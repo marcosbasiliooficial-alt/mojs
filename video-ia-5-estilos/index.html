@@ -631,7 +631,7 @@ function hook(c, t) {
   const order = [0, 1, 2, 3, 4, 0, 1, 2, 3, 4];
   const idx = order[cut % order.length];
   const spin = t * Math.PI * 2.6;
-  const ltFor = [1.2, 1.4, 1.6, 1.0, 6.2];
+  const ltFor = [1.2, 1.4, 1.6, -1.0, 6.2];
   // zoom punch a cada corte
   const local = t - cut * BEAT;
   const z = 1 + 0.08 * (1 - eOutCubic(clamp(local / 0.25)));
@@ -639,31 +639,57 @@ function hook(c, t) {
   SCENES[idx](c, ltFor[idx] + local, { angle: idx === 4 ? undefined : spin, noLabel: true, noGlitch: true });
   c.restore();
   if (idx === 2 && local < 0.12) glitch(c, cut * 7, 0.7);
-  // escurece para leitura
+  // leve sombra só nas bordas (o cenário continua vivo)
   const sh = c.createLinearGradient(0, 0, 0, H);
-  sh.addColorStop(0, 'rgba(0,0,0,.72)'); sh.addColorStop(.36, 'rgba(0,0,0,.15)'); sh.addColorStop(.7, 'rgba(0,0,0,.1)'); sh.addColorStop(1, 'rgba(0,0,0,.75)');
+  sh.addColorStop(0, 'rgba(0,0,0,.35)'); sh.addColorStop(.18, 'rgba(0,0,0,0)'); sh.addColorStop(.75, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.45)');
   c.fillStyle = sh; c.fillRect(0, 0, W, H);
   // contador de estilo
-  c.save(); c.font = '800 30px Mono'; c.fillStyle = '#fff'; c.textAlign = 'right';
-  c.fillText(`ESTILO 0${idx + 1}`, 1010, 120); c.restore();
+  c.save(); c.font = '800 26px Mono'; c.textBaseline = 'middle';
+  const tag = `ESTILO 0${idx + 1}/05`; const tw = c.measureText(tag).width + 36;
+  roundRect(c, 1010 - tw, 92, tw, 48, 24); c.fillStyle = 'rgba(0,0,0,.55)'; c.fill();
+  c.fillStyle = '#fff'; c.fillText(tag, 1010 - tw + 18, 117); c.restore();
 
-  c.save(); c.textAlign = 'center'; c.fillStyle = '#fff';
-  // "1 produto."
-  const a = eOutBack(prog(t, 0.1, 0.45));
-  c.save(); c.translate(540, 360); c.scale(a, a); c.font = '900 150px Inter'; c.fillText('1 produto.', 0, 0); c.restore();
-  // "5 vídeos completamente diferentes."
-  const b = eOutCubic(prog(t, 1.1, 1.45));
-  c.save(); c.globalAlpha = b; c.translate(0, (1 - b) * 50); c.font = '800 78px Inter';
-  c.fillText('5 vídeos', 540, 500);
-  c.fillText('completamente diferentes.', 540, 590); c.restore();
-  // "Tudo com IA."
-  const d = prog(t, 3.5, 3.75);
-  if (d > 0) {
-    const s = lerp(1.9, 1, eOutCubic(d));
-    c.save(); c.translate(540, 1560); c.rotate(-0.04); c.scale(s, s); c.globalAlpha = clamp(d * 2);
-    c.font = '900 120px Inter'; const w = c.measureText('Tudo com IA.').width + 80;
-    roundRect(c, -w / 2, -100, w, 150, 22); c.fillStyle = ORANGE; c.fill();
-    c.fillStyle = '#fff'; c.fillText('Tudo com IA.', 0, 18); c.restore();
+  // tipografia em blocos, revelada por máscara no ritmo da narração
+  const block = (text, x, y, size, bg, fg, t0, opts = {}) => {
+    const k = eOutExpo(prog(t, t0, t0 + 0.32));
+    if (k <= 0) return;
+    c.save(); c.translate(x, y); c.rotate(opts.rot ?? -0.035);
+    c.font = `900 ${size}px Inter`; c.letterSpacing = `${-size * 0.03}px`;
+    const w = c.measureText(text).width + size * 0.5, h = size * 1.2;
+    // sombra dura
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(10, 12, w * k, h);
+    c.beginPath(); c.rect(0, 0, w * k, h); c.clip();
+    c.fillStyle = bg; c.fillRect(0, 0, w, h);
+    c.fillStyle = fg; c.textBaseline = 'alphabetic';
+    c.fillText(text, size * 0.25 - (1 - k) * 60, size * 0.98);
+    c.restore();
+    return w;
+  };
+  block('1 PRODUTO.', 56, 200, 132, '#ffffff', '#0d0d10', 0.12);
+  block('5 VÍDEOS', 56, 372, 112, ORANGE, '#ffffff', 1.12);
+  block('COMPLETAMENTE', 56, 518, 74, '#0d0d10', '#ffffff', 1.95);
+  block('DIFERENTES.', 56, 616, 74, '#0d0d10', '#ffffff', 2.7);
+  // "TUDO COM IA." palavra a palavra, com carimbo no "IA"
+  const words = [['TUDO', 3.56, '#fff'], ['COM', 3.84, '#fff']];
+  c.save(); c.font = '900 128px Inter'; c.textBaseline = 'alphabetic'; c.letterSpacing = '-4px';
+  let wx = 60; const wy = 1640;
+  for (const [wd, t0, col] of words) {
+    const k = prog(t, t0, t0 + 0.18);
+    const ww = c.measureText(wd).width;
+    if (k > 0) {
+      const sc = lerp(1.5, 1, eOutCubic(k));
+      c.save(); c.translate(wx + ww / 2, wy); c.scale(sc, sc); c.globalAlpha = clamp(k * 2);
+      c.shadowColor = 'rgba(0,0,0,.55)'; c.shadowBlur = 30; c.fillStyle = col; c.textAlign = 'center'; c.fillText(wd, 0, 0); c.restore();
+    }
+    wx += ww + 34;
+  }
+  const ki = prog(t, 4.05, 4.3);
+  if (ki > 0) {
+    const iw = c.measureText('IA.').width + 60, sc = lerp(2.2, 1, eOutBack(ki));
+    c.save(); c.translate(wx + iw / 2 - 10, wy - 46); c.rotate(-0.08); c.scale(sc, sc); c.globalAlpha = clamp(ki * 3);
+    c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(-iw / 2 + 10, -80, iw, 160);
+    c.fillStyle = ORANGE; c.fillRect(-iw / 2, -92, iw, 160);
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText('IA.', 0, 34); c.restore();
   }
   c.restore();
   // flash nos cortes
